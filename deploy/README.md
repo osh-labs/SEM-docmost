@@ -134,7 +134,9 @@ Fill in `.env`:
   `SECRET_KEY` (filled by the loop above; never commit `.env`, the
   repository is public).
 - `ALLOWED_EMAILS`: the team's Docmost email addresses, comma-separated.
-- Mail (deferred; `MAIL_DRIVER=log` until the stack runs). Later, through Migadu: create the sending mailbox (for example
+- Mail (deferred; leave the mail lines commented out until the stack runs;
+  Docmost refuses to start with `MAIL_DRIVER=log`). Later, enable
+  `compose.mail.yaml` (see `.env.example`). Through Migadu: create the sending mailbox (for example
   `docs@southeastexpeditionmed.com`) in Migadu, check that the domain's
   SPF, DKIM and DMARC records from Migadu's DNS setup page are in
   Cloudflare, and put the mailbox password in `SMTP_PASSWORD`. Test by
@@ -192,7 +194,7 @@ For Claude Code to connect, trust Caddy's root certificate
 
 1. Settings > Members > Invite members: enter emails and role (Member for most,
    Admin only where needed).
-2. With SMTP configured the invitee gets an email. With `MAIL_DRIVER=log`
+2. With SMTP configured the invitee gets an email. Without mail configured
    nothing is sent (in production the log driver discards mail): open the
    pending invitation's action menu in Settings > Members, copy the invite
    link, and send it to the member directly.

@@ -77,14 +77,9 @@ services:
       FILE_UPLOAD_SIZE_LIMIT: ${FILE_UPLOAD_SIZE_LIMIT:-50mb}
       FILE_IMPORT_SIZE_LIMIT: ${FILE_IMPORT_SIZE_LIMIT:-200mb}
       DISABLE_TELEMETRY: ${DISABLE_TELEMETRY:-true}
-      MAIL_DRIVER: ${MAIL_DRIVER:-log}
-      MAIL_FROM_ADDRESS: ${MAIL_FROM_ADDRESS:-}
-      MAIL_FROM_NAME: ${MAIL_FROM_NAME:-Docmost}
-      SMTP_HOST: ${SMTP_HOST:-smtp.migadu.com}
-      SMTP_PORT: ${SMTP_PORT:-465}
-      SMTP_SECURE: ${SMTP_SECURE:-true}
-      SMTP_USERNAME: ${SMTP_USERNAME:-}
-      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      # Mail is configured in compose.mail.yaml. Docmost accepts only "smtp"
+      # or "postmark" for MAIL_DRIVER and refuses to start on any other value,
+      # including an empty one; with MAIL_DRIVER unset it discards mail.
       NODE_OPTIONS: ${DOCMOST_NODE_OPTIONS:---no-webstorage}
     volumes:
       - docmost_storage:/app/data/storage
