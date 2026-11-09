@@ -107,11 +107,21 @@ limit or move to the 2 GB bundle (decision D-6).
 ## First boot
 
 ```sh
-# On the host, as the deploy user
+# On the host, as the deploy user. The repository is public, so a sparse
+# clone of deploy/ is enough (no credentials on the host).
 sudo mkdir -p /opt/sem-docmost && sudo chown "$USER" /opt/sem-docmost
-# copy this repository's deploy/ directory to /opt/sem-docmost/deploy
+cd /opt/sem-docmost
+git clone --depth 1 --branch <branch> --filter=blob:none --sparse \
+  https://github.com/osh-labs/SEM-docmost.git repo
+cd repo && git sparse-checkout set deploy
+ln -s /opt/sem-docmost/repo/deploy /opt/sem-docmost/deploy
 cd /opt/sem-docmost/deploy
 cp .env.example .env && chmod 600 .env
+# Generate the four secrets in place (values are not printed):
+for k in POSTGRES_PASSWORD MCP_DB_PASSWORD APP_SECRET SECRET_KEY; do
+  sed -i "s|^$k=\$|$k=$(openssl rand -hex 32)|" .env
+done
+# Later updates of the deploy files: cd /opt/sem-docmost/repo && git pull
 ```
 
 Fill in `.env`:
@@ -120,8 +130,9 @@ Fill in `.env`:
 - `DOCMOST_TAG`: see "Choosing the Docmost tag" below.
 - `MCP_IMAGE`: `ghcr.io/osh-labs/docmost-mcp-remote@sha256:<digest>`. A tag
   is not accepted by policy; use the digest.
-- Secrets, each generated separately with `openssl rand -hex 32`:
-  `POSTGRES_PASSWORD`, `MCP_DB_PASSWORD`, `APP_SECRET`, `SECRET_KEY`.
+- Secrets: `POSTGRES_PASSWORD`, `MCP_DB_PASSWORD`, `APP_SECRET`,
+  `SECRET_KEY` (filled by the loop above; never commit `.env`, the
+  repository is public).
 - `ALLOWED_EMAILS`: the team's Docmost email addresses, comma-separated.
 - Mail (deferred; `MAIL_DRIVER=log` until the stack runs). Later, through Migadu: create the sending mailbox (for example
   `docs@southeastexpeditionmed.com`) in Migadu, check that the domain's
