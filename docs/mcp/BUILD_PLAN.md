@@ -191,7 +191,7 @@ deploy/
   compose.yaml              # caddy, docmost, docmost-mcp, postgres, redis
   Caddyfile
   .env.example              # no secrets
-  postgres-init/10-mcp.sql  # creates docmost_mcp role and database
+  postgres-init/10-mcp.sh   # creates docmost_mcp role and database (first init only)
   scripts/
     backup.sh               # pg_dumpall + storage volume -> S3
     restore.sh
@@ -260,7 +260,7 @@ Exit: go means proceed with B. No-go for an unfixable reason means Track C (sect
 | ID | Task | Detail |
 |---|---|---|
 | 2.1 | Write `deploy/compose.yaml` | Pin `docmost/docmost:<current tag>` (check the latest release; at least 0.97.0); `postgres:18`; `redis:8 --appendonly yes --maxmemory-policy noeviction`; `docmost-mcp` built from `mcp/` or the fork's image at a digest; `caddy:2`. Memory limits per service (`mem_limit`). `read_only`, `cap_drop: ALL` and `no-new-privileges` for the sidecar, as in its compose file |
-| 2.2 | Postgres init | `postgres-init/10-mcp.sql` creates the `docmost_mcp` role and database. Sidecar `DATABASE_URL=postgresql://docmost_mcp:...@postgres:5432/docmost_mcp` |
+| 2.2 | Postgres init | `postgres-init/10-mcp.sh` creates the `docmost_mcp` role and database. Sidecar `DATABASE_URL=postgresql://docmost_mcp:...@postgres:5432/docmost_mcp` |
 | 2.3 | Environment | Docmost: `APP_URL=https://docs.southeastexpeditionmed.com`, `APP_SECRET`, `DATABASE_URL`, `REDIS_URL`; leave `COLLAB_DISABLE_REDIS` unset. Sidecar: `PUBLIC_URL=https://docs-mcp.southeastexpeditionmed.com`, `DOCMOST_URL=http://docmost:3000`, `DOCMOST_ALLOW_INSECURE_HTTP=true`, `SECRET_KEY`, `ALLOWED_EMAILS` (team list), `RELOGIN_MODE=ask`, `TOOL_CALLS_PER_MINUTE=60`, `MAX_PAGE_CHARS=60000`, `SNAPSHOT_RETENTION_DAYS=30`, `AUDIT_RETENTION_DAYS=90` |
 | 2.4 | Caddyfile | Two sites; `reverse_proxy` with `flush_interval -1` on `docs-mcp.` (no response buffering for streams); WebSockets pass through by default for `docs.`; HSTS; `request_body max_size` on `docs-mcp.` matching `UPLOAD_MAX_MB` |
 | 2.5 | Bring up locally with self-signed TLS or a tunnel; create the workspace through the first-run setup; create 2 test users and 2 spaces with different membership | Stack up |

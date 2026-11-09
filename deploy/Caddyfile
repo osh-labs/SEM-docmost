@@ -1,0 +1,92 @@
+# Caddy v2 configuration for Docmost and the MCP sidecar.
+#
+# Host names come from the environment (set in compose.yaml from .env):
+#   DOCS_HOST  wiki (Docmost)          default docs.southeastexpeditionmed.com
+#   MCP_HOST   MCP sidecar             default docs-mcp.southeastexpeditionmed.com
+# Both DNS records are DNS only (grey cloud) in Cloudflare, so Caddy obtains
+# Let's Encrypt certificates itself over ports 80/443.
+#
+# For a local test stack set DOCS_HOST=docs.localhost and
+# MCP_HOST=docs-mcp.localhost; Caddy then serves them with its internal CA.
+#
+# Access logs are JSON files in the caddy_logs volume (/var/log/caddy), for
+# fail2ban. The multi_regexp log filter needs Caddy 2.10 or later (CADDY_TAG).
+# Caddy already redacts the Authorization, Cookie and Set-Cookie
+# headers in access logs.
+{
+	email {$ACME_EMAIL}
+}
+
+(hsts) {
+	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
+}
+
+# Wiki: Docmost (web app, API and collaboration WebSockets).
+{$DOCS_HOST:docs.southeastexpeditionmed.com} {
+	import hsts
+
+	# Docmost defaults: FILE_UPLOAD_SIZE_LIMIT=50mb, FILE_IMPORT_SIZE_LIMIT=200mb
+	# (environment.service.ts). Allow the larger one plus multipart overhead.
+	request_body {
+		max_size 210MiB
+	}
+
+	encode zstd gzip
+
+	# WebSocket upgrades (collaboration on /collab) pass through by default.
+	reverse_proxy docmost:3000
+
+	log {
+		output file /var/log/caddy/docs-access.log {
+			roll_size 20MiB
+			roll_keep 5
+		}
+		format filter {
+			wrap json
+			fields {
+				# Drop query strings (password-reset and invitation tokens).
+				request>uri regexp `[?].*$` ``
+				request>headers>Referer delete
+			}
+		}
+	}
+}
+
+# MCP sidecar (docmost-mcp-remote). Must be served at the root of its own host.
+{$MCP_HOST:docs-mcp.southeastexpeditionmed.com} {
+	import hsts
+
+	# The sidecar accepts UPLOAD_MAX_MB (50) MiB of files per upload request
+	# plus 1 MiB of multipart overhead. Keep this in step with UPLOAD_MAX_MB.
+	request_body {
+		max_size 51MiB
+	}
+
+	# No compression and no response buffering: MCP streams responses.
+	reverse_proxy docmost-mcp:8000 {
+		flush_interval -1
+	}
+
+	log {
+		output file /var/log/caddy/mcp-access.log {
+			roll_size 20MiB
+			roll_keep 5
+		}
+		format filter {
+			wrap json
+			fields {
+				# Download and upload links are bearer links with the token in
+				# the path (/downloads/<token>, /uploads/<token>/...). Replace the
+				# token and drop any query string (OAuth authorize parameters).
+				request>uri multi_regexp {
+					regexp `[?].*$` ``
+					regexp `^/(downloads|uploads)/[^/]+` `/${1}/REDACTED`
+				}
+				# The upload page's own requests carry its URL in Referer.
+				request>headers>Referer delete
+				# OAuth redirects carry the authorization code in Location.
+				resp_headers>Location delete
+			}
+		}
+	}
+}
