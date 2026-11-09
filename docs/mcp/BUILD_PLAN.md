@@ -18,6 +18,8 @@ Status of this document: planning only. Nothing below has been deployed or execu
    - snapshots before writes, and no permanent delete
 
    Its README states it is tested in CI against Docmost 0.80.1 to 0.97.
+
+   A second remote candidate, `Rahulk644/docmost-mcp` (MIT, Rust), also has per-user OAuth 2.1, but keeps grants in memory only (section 4.1).
 2. Recommendation: do not write a new MCP server first. Fork `bbik52/docmost-mcp-remote` into `osh-labs`, review it for security, build our own image from a pinned commit, and run it as a sidecar (handoff option A). Write our own TypeScript server (Track C, section 7) only if the review or the acceptance tests fail.
 3. Docmost itself does not need code changes. Run the upstream `docmost/docmost` image at a pinned tag. Because Docmost is not modified, the AGPL section 13 source-offer obligation in handoff section 4 does not apply. This fork then holds deployment config, docs and, if we adopt it, the MCP sidecar source.
 4. The survey resolves most of the unverified items in handoff section 8 (see section 3). The items still open are live-edit behavior, memory on 1 GB, and tests against our own data.
@@ -35,18 +37,46 @@ Search run 2026-11-09 with the GitHub repository search API (`docmost mcp`, `doc
 |---|---|---|---|---|
 | `bbik52/docmost-mcp-remote` | Python / Apache-2.0 | 2026-10-27 | Streamable HTTP; OAuth 2.1 + DCR + PKCE; per-user Docmost login; personal bearer tokens | Direct match to our design. 62 tools, Postgres state, ADRs, threat model, CI against real Docmost |
 | `abelsr/docmost-mcp-oss` | Python / MIT | 2026-09-24 | stdio or HTTP; single account | Writes the body through the Yjs collaboration WebSocket. bbik52 used it as its reference and later dropped the Yjs path |
-| `Rahulk644/docmost-mcp` | Rust / MIT | 2026-11-06 | Authenticated Streamable HTTP, writes denied by default | Hardening ideas; bearer only, no OAuth (see 2.2) |
+| `Rahulk644/docmost-mcp` (fork of wisflux) | Rust / MIT | 2026-11-06 | Streamable HTTP; per-user OAuth 2.1 + DCR + PKCE that reuses the Docmost login session; static break-glass bearer; grants in memory only | Second remote candidate (section 4). Lower memory than Python; users must reconnect after every restart |
+| `YugenLabsTI/shrd-docmost-mcp` | Python / Apache-2.0 | 2026-11-06 | stdio, shared account | Best API reference: `docs/docmost-api-v0.96.0.md` cites Docmost source lines throughout |
 | `wisflux/docmost-local-mcp` | Rust / MIT | 2026-07-12 | Local | Community Edition read and write |
 | `mauriciosoares01/docmost-mcp` | TypeScript / MIT | 2026-10-08 | Local | Says it delegates authorization to Docmost RBAC |
 | `dilruwanm/docmost-community-mcp`, `punyamsingh/docmost-mcp`, `MrMartiniMo/docmost-mcp` | TypeScript / MIT | 2026-02 to 2026-10 | stdio, shared account | TypeScript references if we go to Track C |
 | `ggpo1/docmost-sdk` | multi / no LICENSE file | 2026-05-21 | n/a | Says it builds SDKs from an OpenAPI 3.1 spec of the Docmost API (see 2.2) |
-| `glinhard/docmost-cli`, `HaruHunab1320/docmost-mcp` | Python, TS / AGPL-3.0 | 2026-07, 2026-01 | CLI, stdio | AGPL. Compatible with our fork, but read for ideas only |
-
-Survey details for the non-bbik52 repositories are in section 2.2.
+| `glinhard/docmost-cli` | Python / AGPL-3.0 | 2026-07-28 | CLI, shared account | Same license as this fork; `SPECIFICATION.md` documents the server-side collab write path |
+| `HaruHunab1320/docmost-mcp` | TS / AGPL-3.0 | 2026-01-01 | Renamed Docmost fork with in-server MCP | Do not use: writes `content` straight to the DB row and bypasses Yjs (`apps/server/src/integrations/mcp/handlers/page.handler.ts:513-522`) |
+| `NeerdOnerT/docmost-mcp` | Python / MIT | 2026-08-21 | stdio, shared account | Minimal; sends `pages/update` without `operation`, which may fail |
 
 ### 2.2 Notes from the other repositories
 
-<!-- SURVEY-NOTES -->
+Write path. Repositories are split three ways:
+
+| Approach | Used by | Assessment |
+|---|---|---|
+| `pages/update` with `format: "markdown"`, applied by Docmost through its collab gateway | bbik52, dilruwanm, punyamsingh, glinhard, YugenLabsTI | Simplest. Correct on Docmost 0.70 and later (verified in source, section 3) |
+| `pages/update` with ProseMirror JSON from a client-side converter | wisflux, Rahulk644, mauriciosoares01 | Keeps more formatting but needs a converter to maintain. mauriciosoares01 merges append and prepend on the client and always sends `replace`, because the server would otherwise merge a second time and duplicate content |
+| Direct Yjs over the `/collab` WebSocket | abelsr, MrMartiniMo | Workaround from before 0.70. abelsr creates a temporary page through `/pages/import` to convert Markdown, and the deleted temporary pages pile up in Trash. MrMartiniMo converts with StarterKit only, so Docmost-specific nodes are lost |
+
+Decision: use the server-side Markdown path, with JSON `replace` only for restores. No WebSocket client.
+
+Write-safety patterns worth keeping, whichever track we take:
+
+- Read back after every write and fail if the body did not change. dilruwanm, bbik52 and Rahulk644 do this.
+- Stale-page check: refuse a write if `updatedAt` changed since the agent read the page (YugenLabsTI `STALE_PAGE`). There is no ETag or compare-and-swap in Docmost.
+- Busy window: refuse `replace` if another user saved recently (YugenLabsTI `PAGE_BUSY`, bbik52 60 s).
+- Per-write confirmation: MCP elicitation (mauriciosoares01, bbik52) or a `confirm: true` argument (Rahulk644).
+- Mentions: Markdown that contains mentions triggers Docmost notifications. YugenLabsTI refuses new mentions in edits. Decide a policy (section 11, D-7).
+
+Additional API facts. These come from YugenLabsTI `docs/docmost-api-v0.96.0.md` and glinhard, and we have not tested them:
+
+- Paginate on the cursor, never on item count. A page can return fewer items than `limit` while `hasNextPage` is still true.
+- `search` uses offset paging, default limit 25 with no maximum. Its `highlight` field is raw Postgres `ts_headline` output with `<b>` tags and is not HTML-escaped, so sanitize it before returning it to the model.
+- The JWT arrives only as a cookie. If both a cookie and a Bearer header are sent, the cookie takes precedence, so the client must not keep a cookie jar. bbik52 and YugenLabsTI already behave this way.
+- `POST /api/auth/collab-token` exists and is exempt from the login throttle. It is only needed for direct Yjs access.
+- Comments created through REST are page-level. Inline comments anchored to text need a Yjs anchor that the REST API cannot create.
+- `POST /api/pages/import` (multipart `.md`) creates a page from a file. It takes no `parentPageId`.
+
+On the abelsr claim that REST ignores `content`: the survey matches it to an older Docmost build, but abelsr never states the version. wisflux and Rahulk644 gate REST body writes on version 0.70 or later.
 
 ### 2.3 Why bbik52 is the lead candidate
 
@@ -108,6 +138,21 @@ New facts from the survey to carry forward:
 | Main risk | Project abandoned or compromised | Review effort, and Python upkeep | OAuth implementation bugs |
 
 Recommendation: B. The sidecar sees every member's Docmost password at sign-in and holds tokens that can act as them, so we should not run third-party code we have not reviewed. Forking plus a security review gives the time-to-value of A with the control of C. Keep C as the fallback, gated by section 6, Phase 1.
+
+### 4.1 Alternative base for Track B: Rahulk644 (Rust)
+
+| Criterion | bbik52 (Python) | Rahulk644 (Rust) |
+|---|---|---|
+| License | Apache-2.0 | MIT |
+| Sign-in | Its own login page; the sidecar receives the Docmost password and calls `/api/auth/login` | Reuses the user's Docmost browser session. `/oauth/authorize` and `/oauth/resume` must be routed on the Docmost origin so the sidecar can read the `authToken` cookie and validate it with `/api/users/me` (`src/oauth.rs`). The sidecar never handles passwords, but it does get the session JWT |
+| Grant storage | Postgres, encrypted; survives restarts | Memory only. Every restart or deploy forces every member to reconnect each client, including on mobile |
+| Write safety | Snapshots, read-back, busy check, Trash only | Writes off by default, `confirm: true` per mutation, JSONL audit log, Host and Origin allowlists |
+| Tools | 62 | About 20 |
+| Memory (estimate) | 80 to 150 MB | Likely under 30 MB (Rust binary; not measured) |
+| Extra dependency | Postgres database | None |
+| Size | About 10.8k lines of Python | About 7.8k lines of Rust |
+
+Recommendation: start Phase 1 with bbik52, because persistent grants matter for mobile users and snapshots matter for recovery. Switch to Rahulk644 if T-10 shows the Python sidecar does not fit in 1 GB, or if the Phase 1 review fails on password handling. Running Rahulk644 also needs the path-routing change in the Caddyfile on `wiki.`.
 
 ---
 
@@ -292,7 +337,7 @@ Use only if Phase 1 returns no-go. Keep the same deployment (sections 5 and 6); 
 | Step | Scope | Reference |
 |---|---|---|
 | C1 | Package `mcp/` with Node 22, `@modelcontextprotocol/sdk` (Streamable HTTP, stateless mode), Express, `pg`, `zod` | Handoff section 7 |
-| C2 | Docmost client: `login`, `search`, `pages/info` (markdown), `pages/create`, `pages/update`, `spaces`, `pages/sidebar-pages`, `comments`, `comments/create`; envelope unwrapping, `cursor` pagination, 404 means "not found or no access" | Section 3 facts; bbik52 `docs/docmost-api-notes.md` as a written spec (Apache-2.0; credit it in NOTICE if text is adapted) |
+| C2 | Docmost client: `login`, `search`, `pages/info` (markdown), `pages/create`, `pages/update`, `spaces`, `pages/sidebar-pages`, `comments`, `comments/create`; envelope unwrapping, `cursor` pagination, 404 means "not found or no access" | Sections 2.2 and 3; YugenLabsTI `docs/docmost-api-v0.96.0.md` and bbik52 `docs/docmost-api-notes.md` as written specs (Apache-2.0; credit it in NOTICE if text is adapted) |
 | C3 | OAuth 2.1 authorization server: DCR (RFC 7591), authorization code + PKCE S256, RFC 8707 resource, protected-resource metadata (RFC 9728), refresh rotation, access TTL 1 h; optionally CIMD | Section 10 |
 | C4 | `/authorize` page: Docmost email and password, CSRF, per-IP and per-email limits, encrypted Docmost token (AES-256-GCM, key from env, key id for rotation) | |
 | C5 | Tools (minimum): `search_pages`, `get_page`, `list_spaces`, `list_pages`, `create_page`, `update_page` (append and prepend; replace gated), `list_comments`, `create_comment`, `move_page` | Handoff 7.4 |
@@ -350,6 +395,7 @@ Open item (from handoff section 4): an MCP sidecar is a separate program that ca
 | D-4 | Default scopes members should tick | `read` + `write`; `delete` and `admin` for Chris only |
 | D-5 | `RELOGIN_MODE`: `ask` (re-sign-in every 90 days) or stored encrypted password | `ask` |
 | D-6 | Confirm the $10 budget covers hosting only, and accept a $12 bundle if T-10 fails | Decide before Phase 4 |
+| D-7 | May agents write @-mentions (which send Docmost notifications)? | Allow in comments only; refuse new mentions in page edits |
 
 ---
 
@@ -371,6 +417,7 @@ Open item (from handoff section 4): an MCP sidecar is a separate program that ca
 - GitHub repository search API, queries listed in section 2, run 2026-11-09
 - https://github.com/bbik52/docmost-mcp-remote (README, `docs/DESIGN.md`, `docs/docmost-api-notes.md`, `docs/security-model.md`, `docs/adr/0002` to `0004`, `CHANGELOG.md`; commit `a5e3624`)
 - https://github.com/abelsr/docmost-mcp-oss
+- https://github.com/YugenLabsTI/shrd-docmost-mcp (`docs/docmost-api-v0.96.0.md`), https://github.com/glinhard/docmost-cli (`SPECIFICATION.md`)
 - https://github.com/Rahulk644/docmost-mcp, https://github.com/wisflux/docmost-local-mcp, https://github.com/mauriciosoares01/docmost-mcp, https://github.com/dilruwanm/docmost-community-mcp, https://github.com/punyamsingh/docmost-mcp, https://github.com/MrMartiniMo/docmost-mcp, https://github.com/ggpo1/docmost-sdk
 - Claude connector authentication: https://claude.com/docs/connectors/building/authentication
 - Building custom connectors via remote MCP: https://support.anthropic.com/en/articles/11503834-building-custom-connectors-via-remote-mcp-servers
