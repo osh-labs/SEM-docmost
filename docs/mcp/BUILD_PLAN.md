@@ -152,7 +152,7 @@ Recommendation: B. The sidecar sees every member's Docmost password at sign-in a
 | Extra dependency | Postgres database | None |
 | Size | About 10.8k lines of Python | About 7.8k lines of Rust |
 
-Recommendation: start Phase 1 with bbik52, because persistent grants matter for mobile users and snapshots matter for recovery. Switch to Rahulk644 if T-10 shows the Python sidecar does not fit in 1 GB, or if the Phase 1 review fails on password handling. Running Rahulk644 also needs the path-routing change in the Caddyfile on `wiki.`.
+Recommendation: start Phase 1 with bbik52, because persistent grants matter for mobile users and snapshots matter for recovery. Switch to Rahulk644 if T-10 shows the Python sidecar does not fit in 1 GB, or if the Phase 1 review fails on password handling. Running Rahulk644 also needs the path-routing change in the Caddyfile on `docs.`.
 
 ---
 
@@ -168,8 +168,8 @@ Team browsers ──────────────────────
                          Lightsail 1 GB, Ubuntu 24.04, Docker Compose
                          ┌─────────────────────────────────────────────┐
                          │ caddy :80/:443 (TLS, WebSockets, no buffer) │
-                         │   wiki.<domain> ──► docmost:3000            │
-                         │   mcp.<domain>  ──► docmost-mcp:8000        │
+                         │   docs.southeastexpeditionmed.com ──► docmost:3000            │
+                         │   docs-mcp.southeastexpeditionmed.com  ──► docmost-mcp:8000        │
                          │ docmost (upstream image, pinned tag)        │
                          │ docmost-mcp (our build of the fork)         │
                          │   ──► http://docmost:3000/api  (internal)   │
@@ -178,9 +178,9 @@ Team browsers ──────────────────────
                          └─────────────────────────────────────────────┘
 ```
 
-- Two host names, because bbik52 must be served at the root of a host name.
+- Two host names (`docs.` and `docs-mcp.`), because bbik52 must be served at the root of a host name.
 - The sidecar reaches Docmost over the internal Compose network. That needs `DOCMOST_ALLOW_INSECURE_HTTP=true`. This is acceptable because the traffic never leaves the Docker bridge network; record the decision in the deployment README.
-- Exposure: make both host names public. Members' browsers must reach `wiki.` (editor) and `mcp.` (OAuth sign-in page), and Anthropic's cloud must reach `mcp.`. Keeping the wiki behind Tailscale would block mobile editing in Docmost itself. Revisit if the team only reaches Docmost from managed devices.
+- Exposure: make both host names public. Members' browsers must reach `docs.` (editor) and `docs-mcp.` (OAuth sign-in page), and Anthropic's cloud must reach `docs-mcp.`. Keeping the wiki behind Tailscale would block mobile editing in Docmost itself. Revisit if the team only reaches Docmost from managed devices.
 
 ### 5.2 Repository layout in this fork
 
@@ -232,7 +232,7 @@ Each phase ends in a pull request to `claude/vigilant-einstein-4cbnn3`, or to a 
 | ID | Task | Output |
 |---|---|---|
 | 0.1 | Answer the open decisions in section 11 (D-1 to D-6) | Comment on the PR |
-| 0.2 | Register or choose the domain; create DNS A records for `wiki.` and `mcp.` | DNS |
+| 0.2 | Create Cloudflare DNS A records (DNS only) for `docs.` and `docs-mcp.` | DNS |
 | 0.3 | Create a Lightsail 1 GB instance with a static IP; open firewall ports 22 (restricted), 80 and 443 | Instance |
 | 0.4 | Create an S3 bucket and an IAM user scoped to `PutObject` and `GetObject` on that bucket only | Credentials, held outside git |
 | 0.5 | Fork `bbik52/docmost-mcp-remote` to `osh-labs/docmost-mcp-remote` and add it to the agent session | Fork |
@@ -261,10 +261,10 @@ Exit: go means proceed with B. No-go for an unfixable reason means Track C (sect
 |---|---|---|
 | 2.1 | Write `deploy/compose.yaml` | Pin `docmost/docmost:<current tag>` (check the latest release; at least 0.97.0); `postgres:18`; `redis:8 --appendonly yes --maxmemory-policy noeviction`; `docmost-mcp` built from `mcp/` or the fork's image at a digest; `caddy:2`. Memory limits per service (`mem_limit`). `read_only`, `cap_drop: ALL` and `no-new-privileges` for the sidecar, as in its compose file |
 | 2.2 | Postgres init | `postgres-init/10-mcp.sql` creates the `docmost_mcp` role and database. Sidecar `DATABASE_URL=postgresql://docmost_mcp:...@postgres:5432/docmost_mcp` |
-| 2.3 | Environment | Docmost: `APP_URL=https://wiki.<domain>`, `APP_SECRET`, `DATABASE_URL`, `REDIS_URL`; leave `COLLAB_DISABLE_REDIS` unset. Sidecar: `PUBLIC_URL=https://mcp.<domain>`, `DOCMOST_URL=http://docmost:3000`, `DOCMOST_ALLOW_INSECURE_HTTP=true`, `SECRET_KEY`, `ALLOWED_EMAILS` (team list), `RELOGIN_MODE=ask`, `TOOL_CALLS_PER_MINUTE=60`, `MAX_PAGE_CHARS=60000`, `SNAPSHOT_RETENTION_DAYS=30`, `AUDIT_RETENTION_DAYS=90` |
-| 2.4 | Caddyfile | Two sites; `reverse_proxy` with `flush_interval -1` on `mcp.` (no response buffering for streams); WebSockets pass through by default for `wiki.`; HSTS; `request_body max_size` on `mcp.` matching `UPLOAD_MAX_MB` |
+| 2.3 | Environment | Docmost: `APP_URL=https://docs.southeastexpeditionmed.com`, `APP_SECRET`, `DATABASE_URL`, `REDIS_URL`; leave `COLLAB_DISABLE_REDIS` unset. Sidecar: `PUBLIC_URL=https://docs-mcp.southeastexpeditionmed.com`, `DOCMOST_URL=http://docmost:3000`, `DOCMOST_ALLOW_INSECURE_HTTP=true`, `SECRET_KEY`, `ALLOWED_EMAILS` (team list), `RELOGIN_MODE=ask`, `TOOL_CALLS_PER_MINUTE=60`, `MAX_PAGE_CHARS=60000`, `SNAPSHOT_RETENTION_DAYS=30`, `AUDIT_RETENTION_DAYS=90` |
+| 2.4 | Caddyfile | Two sites; `reverse_proxy` with `flush_interval -1` on `docs-mcp.` (no response buffering for streams); WebSockets pass through by default for `docs.`; HSTS; `request_body max_size` on `docs-mcp.` matching `UPLOAD_MAX_MB` |
 | 2.5 | Bring up locally with self-signed TLS or a tunnel; create the workspace through the first-run setup; create 2 test users and 2 spaces with different membership | Stack up |
-| 2.6 | `deploy/scripts/smoke.sh` | `GET /api/health` returns 200; `GET mcp/healthz` returns 200; `POST mcp/mcp` without a token returns 401 with a `WWW-Authenticate` header pointing to protected-resource metadata; `/.well-known/oauth-protected-resource/mcp` lists `resource` equal to `https://mcp.<domain>/mcp` |
+| 2.6 | `deploy/scripts/smoke.sh` | `GET /api/health` returns 200; `GET mcp/healthz` returns 200; `POST mcp/mcp` without a token returns 401 with a `WWW-Authenticate` header pointing to protected-resource metadata; `/.well-known/oauth-protected-resource/mcp` lists `resource` equal to `https://docs-mcp.southeastexpeditionmed.com/mcp` |
 
 Exit: `smoke.sh` passes locally.
 
@@ -305,7 +305,7 @@ Exit: T-01 to T-08 and T-11 to T-12 pass. T-09 and T-10 results are recorded and
 
 | ID | Task | Expected |
 |---|---|---|
-| 5.1 | claude.ai: Settings > Connectors > Add custom connector, URL `https://mcp.<domain>/mcp` | Browser opens the sidecar sign-in, then consent, then returns to Claude |
+| 5.1 | claude.ai: Settings > Connectors > Add custom connector, URL `https://docs-mcp.southeastexpeditionmed.com/mcp` | Browser opens the sidecar sign-in, then consent, then returns to Claude |
 | 5.2 | Claude mobile: confirm the connector appears and works (connectors added on claude.ai sync to mobile, per Anthropic docs; verify) | `list_spaces` works from the phone |
 | 5.3 | If the org uses a Team or Enterprise plan, an owner adds the connector at org level | Members see it |
 | 5.4 | Per-member onboarding sheet: how to add the connector, which scopes to tick (recommend `read` + `write`; `delete` and `admin` off), how to revoke at `/account` | One page in the wiki |
@@ -379,23 +379,29 @@ Open item (from handoff section 4): an MCP sidecar is a separate program that ca
 ## 10. Claude connector requirements (current docs)
 
 - Claude can register through Client ID Metadata Documents, Dynamic Client Registration (RFC 7591), or a client ID and secret entered in the connector's advanced settings. It uses CIMD only if the server advertises `client_id_metadata_document_supported: true`; otherwise DCR, which bbik52 implements.
-- The protected-resource metadata `resource` must exactly match the URL entered in Claude, so enter `https://mcp.<domain>/mcp`. bbik52 normalizes trailing slashes and default ports (v1.2.2).
+- The protected-resource metadata `resource` must exactly match the URL entered in Claude, so enter `https://docs-mcp.southeastexpeditionmed.com/mcp`. bbik52 normalizes trailing slashes and default ports (v1.2.2).
 - The OAuth callback is `https://claude.ai/api/mcp/auth_callback`. Anthropic says it may move to `https://claude.com/api/mcp/auth_callback`, so allow both. Claude Code uses loopback callbacks with any port.
-- Connector calls originate from Anthropic's cloud, so `mcp.` must be publicly reachable over HTTPS. Do not IP-restrict it unless Anthropic's published egress ranges are used and kept current.
+- Connector calls originate from Anthropic's cloud, so `docs-mcp.` must be publicly reachable over HTTPS. Do not IP-restrict it unless Anthropic's published egress ranges are used and kept current.
 
 ---
 
-## 11. Open decisions for Chris
+## 11. Decisions (answered by Chris, 2026-11-09)
 
-| ID | Decision | Recommendation |
+| ID | Decision | Answer |
 |---|---|---|
-| D-1 | Track B (fork bbik52) or Track C (build in TypeScript) | B, gated by the Phase 1 review |
-| D-2 | Sidecar source: git subtree under `mcp/` in this repo, or a separate `osh-labs/docmost-mcp-remote` repo with its image referenced by digest | Separate repo (clean upstream merges); this repo holds `deploy/` |
-| D-3 | Domain and host names (`wiki.`, `mcp.`) | Needed for Phase 0 |
-| D-4 | Default scopes members should tick | `read` + `write`; `delete` and `admin` for Chris only |
-| D-5 | `RELOGIN_MODE`: `ask` (re-sign-in every 90 days) or stored encrypted password | `ask` |
-| D-6 | Confirm the $10 budget covers hosting only, and accept a $12 bundle if T-10 fails | Decide before Phase 4 |
-| D-7 | May agents write @-mentions (which send Docmost notifications)? | Allow in comments only; refuse new mentions in page edits |
+| D-1 | Track B (fork bbik52) or Track C (build in TypeScript) | B: fork and adopt, gated by the Phase 1 review |
+| D-2 | Sidecar source location | Separate repo `osh-labs/docmost-mcp-remote`; image referenced by digest; this repo holds `deploy/` |
+| D-3 | Host names | Wiki `docs.southeastexpeditionmed.com`; MCP `docs-mcp.southeastexpeditionmed.com`; DNS in Cloudflare (see 11.1) |
+| D-4 | Default scopes | `read` + `write`; `delete` and `admin` for Chris only |
+| D-5 | `RELOGIN_MODE` | `ask` (members sign in again every 90 days) |
+| D-6 | Budget | $12 bundle (2 GB) acceptable if T-10 fails on 1 GB |
+| D-7 | Agent-written @-mentions | Allowed (comments and page edits). Members are told that mentions send Docmost notifications |
+
+### 11.1 Cloudflare notes
+
+- Start with both records as DNS only (grey cloud). Caddy then obtains Let's Encrypt certificates directly, and nothing sits between Anthropic's cloud and the MCP server.
+- If proxying (orange cloud) is wanted later for `docs.`: set SSL mode to Full (strict); WebSockets are supported on all plans; proxied requests time out after 100 s without a response.
+- Keep `docs-mcp.` DNS only, or, if proxied, exempt it from Bot Fight Mode and WAF challenges. A JavaScript challenge would block Anthropic's server-to-server calls and the OAuth token exchange.
 
 ---
 
