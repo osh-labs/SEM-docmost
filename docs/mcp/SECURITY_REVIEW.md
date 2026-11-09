@@ -40,6 +40,17 @@ Go, with conditions. Adopt the fork once patches P-1 and P-2 are merged into the
 | L-5 | Low | `/authorize` has no rate limit | Accept for now; covered by Caddy and fail2ban |
 | L-6 | Low | Personal tokens can be created with no expiry | Policy: members use the default of 90 days. Possible later patch |
 
+## 3a. Patch status
+
+| Patch | Commit in `osh-labs/docmost-mcp-remote`, branch `osh/security-patches` | Tests |
+|---|---|---|
+| P-1 (C-1) | `48e517c`: the shared client's cookie jar never stores or returns a cookie; a request hook strips any `Cookie` header | New regression tests fail on the old code and pass on the new |
+| P-2 (M-1, L-1) | `b5f5e94`: `OAUTH_REDIRECT_ALLOWLIST` is enforced at `/register` and again at `/authorize`; `user@host` redirect URIs are always refused | Unit tests for allowed, refused, loopback, userinfo and unset cases |
+
+Full suite on the patched branch: 386 unit tests passed; ruff and mypy are clean. Not yet merged to the fork's `master`, and no image has been built yet.
+
+Note: while `OAUTH_REDIRECT_ALLOWLIST` is set, private-scheme redirects such as `cursor://` are refused unless they are listed. Claude.ai, Claude mobile and Claude Code (loopback) are unaffected.
+
 ## 4. Conditions before production
 
 1. P-1 and P-2 are merged in the fork, their unit tests pass, and the image is built from that commit and referenced by digest in `MCP_IMAGE`.
