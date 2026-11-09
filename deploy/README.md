@@ -123,8 +123,11 @@ Fill in `.env`:
 - Secrets, each generated separately with `openssl rand -hex 32`:
   `POSTGRES_PASSWORD`, `MCP_DB_PASSWORD`, `APP_SECRET`, `SECRET_KEY`.
 - `ALLOWED_EMAILS`: the team's Docmost email addresses, comma-separated.
-- Mail settings (`MAIL_DRIVER=smtp` and `SMTP_*`) if invitations and
-  password resets should be emailed.
+- Mail through Migadu: create the sending mailbox (for example
+  `docs@southeastexpeditionmed.com`) in Migadu, check that the domain's
+  SPF, DKIM and DMARC records from Migadu's DNS setup page are in
+  Cloudflare, and put the mailbox password in `SMTP_PASSWORD`. Test by
+  sending yourself a password reset after first boot.
 - Backup settings (`BACKUP_*`, `AWS_*`).
 
 Store `SECRET_KEY` (and preferably the whole `.env`) in the team password
