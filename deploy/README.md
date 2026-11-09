@@ -123,7 +123,7 @@ Fill in `.env`:
 - Secrets, each generated separately with `openssl rand -hex 32`:
   `POSTGRES_PASSWORD`, `MCP_DB_PASSWORD`, `APP_SECRET`, `SECRET_KEY`.
 - `ALLOWED_EMAILS`: the team's Docmost email addresses, comma-separated.
-- Mail through Migadu: create the sending mailbox (for example
+- Mail (deferred; `MAIL_DRIVER=log` until the stack runs). Later, through Migadu: create the sending mailbox (for example
   `docs@southeastexpeditionmed.com`) in Migadu, check that the domain's
   SPF, DKIM and DMARC records from Migadu's DNS setup page are in
   Cloudflare, and put the mailbox password in `SMTP_PASSWORD`. Test by
