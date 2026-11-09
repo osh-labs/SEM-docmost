@@ -128,6 +128,8 @@ services:
       ALLOWED_EMAILS: ${ALLOWED_EMAILS:-}
       ALLOWED_SPACES: ${ALLOWED_SPACES:-}
       RELOGIN_MODE: ${RELOGIN_MODE:-ask}
+      # Patched fork only (security review P-2): restrict OAuth redirect URIs.
+      OAUTH_REDIRECT_ALLOWLIST: ${OAUTH_REDIRECT_ALLOWLIST:-https://claude.ai/api/mcp/auth_callback,https://claude.com/api/mcp/auth_callback}
       TOOL_CALLS_PER_MINUTE: ${TOOL_CALLS_PER_MINUTE:-60}
       MAX_PAGE_CHARS: ${MAX_PAGE_CHARS:-60000}
       SNAPSHOT_RETENTION_DAYS: ${SNAPSHOT_RETENTION_DAYS:-30}
