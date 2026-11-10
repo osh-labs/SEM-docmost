@@ -2,7 +2,7 @@
 
 Environment: Lightsail 1 GB (Ubuntu 24.04, 2 GB swap), `us-east` region. Docmost `0.97.0`. Sidecar `ghcr.io/osh-labs/docmost-mcp-remote@sha256:e8313e822529a0f9144003aee2d635487563e959919cfd76788ff6874b636225` (fork commit `8804fe4`). Postgres 18, Redis 8, Caddy 2.11.
 
-Results marked "reported" were run by Chris on the live host and relayed in the build session. The CI results come from the fork's GitHub Actions.
+Results marked "reported" were run by the owner on the live host and relayed in the build session. The CI results come from the fork's GitHub Actions.
 
 ## 1. Pre-deployment (CI)
 
@@ -39,7 +39,7 @@ Assessment: all containers are within their limits. The swap in use is mostly pa
 
 | Check | Result | Note |
 |---|---|---|
-| First `backup.sh` run | Failed, then passed (reported) | First run: `AccessDenied` on `PutObject`, because the IAM inline policy was not in effect. Passed after the policy was saved for bucket `sem-docmost-backups-01` |
+| First `backup.sh` run | Failed, then passed (reported) | First run: `AccessDenied` on `PutObject`, because the IAM inline policy was not in effect. Passed after the policy was saved for the backup bucket |
 | Objects in S3 | Pass (reported) | `postgres.sql.gz`, `storage.tar.gz`, `SHA256SUMS` under `sem-docmost/2026/11/10/<ts>/`; `env.age` under `sem-docmost-env/` |
 | Nightly cron | Installed (reported) | `/etc/cron.d/sem-docmost-backup`, 03:15 UTC |
 | `env.age` decrypts with the private key from the password manager | Pass (reported) | Decrypted on the temporary restore host |
@@ -52,7 +52,7 @@ Assessment: all containers are within their limits. The swap in use is mostly pa
 |---|---|---|
 | T-01 Sign-in and consent (claude.ai connector) | Pass (reported) | OAuth through the sidecar login, `read` + `write` granted |
 | Claude mobile sees the connector | Pass (reported) | |
-| T-02 Permission isolation with two concurrent members | Pending | Planned: second Docmost user through a personal token in Claude Code while the claude.ai connector stays signed in as Chris; check both orders |
+| T-02 Permission isolation with two concurrent members | Pending | Planned: second Docmost user through a personal token in Claude Code while the claude.ai connector stays signed in as the owner; check both orders |
 | T-03 Create and append | Pass (reported) | |
 | T-04 Live-edit conflict | Pass (reported) | Append while the page was open in the editor |
 | T-05 Markdown fidelity | Pending | |

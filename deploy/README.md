@@ -218,7 +218,7 @@ checks it).
   custom connector, paste the URL. The browser opens the sidecar's sign-in
   page (Docmost email and password), then the consent page, then returns to
   Claude. Tick `read` and `write`; leave `delete` and `admin` off (decision
-  D-4: those are for Chris only). Connectors added on claude.ai appear in the
+  D-4: those are for the owner only). Connectors added on claude.ai appear in the
   mobile app. On a Team or Enterprise plan, an owner adds the connector at
   organization level first.
 - **Claude Code.**
@@ -343,7 +343,7 @@ echo '15 3 * * * root /opt/sem-docmost/deploy/scripts/backup.sh >>/var/log/sem-d
   | sudo tee /etc/cron.d/sem-docmost-backup && sudo chmod 644 /etc/cron.d/sem-docmost-backup
 ```
 
-S3 bucket settings (as set up for `sem-docmost-backups-01`, `us-east-1`):
+S3 bucket settings (as set up on 2026-11-10, same region as the instance):
 Block all public access on, Versioning on, SSE-S3, and a lifecycle rule
 that expires current versions after 90 days and deletes noncurrent versions
 30 days after they become noncurrent. Versioning protects against a
