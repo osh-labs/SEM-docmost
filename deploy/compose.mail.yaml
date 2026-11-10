@@ -1,0 +1,20 @@
+# Mail for Docmost through Migadu SMTP. Not used by default.
+#
+# Enable it by adding this line to .env and filling in the MAIL_* and SMTP_*
+# values there:
+#   COMPOSE_FILE=compose.yaml:compose.mail.yaml
+# then apply with: docker compose up -d docmost
+#
+# Docmost validates MAIL_DRIVER at startup and accepts only "smtp" or
+# "postmark", so this file must not be enabled with empty values.
+services:
+  docmost:
+    environment:
+      MAIL_DRIVER: smtp
+      MAIL_FROM_ADDRESS: ${MAIL_FROM_ADDRESS:?set MAIL_FROM_ADDRESS (the Migadu mailbox or identity)}
+      MAIL_FROM_NAME: ${MAIL_FROM_NAME:-SEM Docs}
+      SMTP_HOST: ${SMTP_HOST:-smtp.migadu.com}
+      SMTP_PORT: ${SMTP_PORT:-465}
+      SMTP_SECURE: ${SMTP_SECURE:-true}
+      SMTP_USERNAME: ${SMTP_USERNAME:?set SMTP_USERNAME (full mailbox address)}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:?set SMTP_PASSWORD}

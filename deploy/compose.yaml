@@ -1,0 +1,259 @@
+# Docmost + docmost-mcp-remote (MCP sidecar) behind Caddy.
+#
+# Usage (from the repository root or from deploy/):
+#   cp deploy/.env.example deploy/.env   # fill in, then: chmod 600 deploy/.env
+#   docker compose -f deploy/compose.yaml up -d
+#
+# Only Caddy publishes ports on the host (80, 443/tcp, 443/udp). Every other
+# service is reachable only on the internal Compose networks.
+#
+# Networks:
+#   edge     Normal bridge with outbound internet. Caddy (published ports,
+#            ACME) and Docmost (SMTP, outbound integrations).
+#   proxy    Internal (no outbound internet), fixed subnet. Caddy -> Docmost
+#            and Caddy -> sidecar. The subnet is fixed so the sidecar's
+#            FORWARDED_ALLOW_IPS can name it exactly.
+#   backend  Internal. Postgres and Redis, reached by Docmost and the sidecar.
+# The sidecar is on proxy and backend only, so it has no route to the
+# internet. It only needs to reach Docmost and Postgres.
+#
+# Memory: mem_limit values are sized for a 1 GB Lightsail instance with a
+# 2 GB swap file. They are estimates (build plan section 5.3) and must be
+# tuned from the measurements taken at test T-10. With swap available,
+# Docker lets each container use swap up to its mem_limit again
+# (memswap_limit defaults to twice mem_limit).
+
+name: sem-docmost
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  caddy:
+    image: caddy:${CADDY_TAG:-2.11}
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL to the address Let's Encrypt should use}
+      DOCS_HOST: ${DOCS_HOST:-docs.southeastexpeditionmed.com}
+      MCP_HOST: ${MCP_HOST:-docs-mcp.southeastexpeditionmed.com}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+      # JSON access logs, read later by fail2ban on the host (Phase 4.6).
+      - caddy_logs:/var/log/caddy
+    networks:
+      - edge
+      - proxy
+    depends_on:
+      docmost:
+        condition: service_started
+      docmost-mcp:
+        condition: service_started
+    mem_limit: 96m
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
+
+  docmost:
+    # Pinned release tag, never "latest". See README "Upgrades".
+    image: docmost/docmost:${DOCMOST_TAG:?set DOCMOST_TAG to a Docmost release tag such as 0.97.0}
+    restart: unless-stopped
+    environment:
+      APP_URL: https://${DOCS_HOST:-docs.southeastexpeditionmed.com}
+      APP_SECRET: ${APP_SECRET:?set APP_SECRET (openssl rand -hex 32)}
+      DATABASE_URL: postgresql://docmost:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/docmost
+      DATABASE_MAX_POOL: ${DOCMOST_DATABASE_MAX_POOL:-10}
+      REDIS_URL: redis://redis:6379
+      # COLLAB_DISABLE_REDIS is deliberately not set.
+      JWT_TOKEN_EXPIRES_IN: ${JWT_TOKEN_EXPIRES_IN:-90d}
+      FILE_UPLOAD_SIZE_LIMIT: ${FILE_UPLOAD_SIZE_LIMIT:-50mb}
+      FILE_IMPORT_SIZE_LIMIT: ${FILE_IMPORT_SIZE_LIMIT:-200mb}
+      DISABLE_TELEMETRY: ${DISABLE_TELEMETRY:-true}
+      # Mail is configured in compose.mail.yaml. Docmost accepts only "smtp"
+      # or "postmark" for MAIL_DRIVER and refuses to start on any other value,
+      # including an empty one; with MAIL_DRIVER unset it discards mail.
+      NODE_OPTIONS: ${DOCMOST_NODE_OPTIONS:---no-webstorage}
+    volumes:
+      - docmost_storage:/app/data/storage
+    networks:
+      - edge
+      - proxy
+      - backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      # The image ships curl. /api/health pings Postgres and Redis.
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://127.0.0.1:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      # First boot runs database migrations; allow time on a small host.
+      start_period: 120s
+    mem_limit: 512m
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
+
+  docmost-mcp:
+    # Our build of osh-labs/docmost-mcp-remote, referenced by digest:
+    #   ghcr.io/osh-labs/docmost-mcp-remote@sha256:<64 hex>
+    image: ${MCP_IMAGE:?set MCP_IMAGE to ghcr.io/osh-labs/docmost-mcp-remote@sha256:...}
+    restart: unless-stopped
+    environment:
+      PUBLIC_URL: https://${MCP_HOST:-docs-mcp.southeastexpeditionmed.com}
+      DOCMOST_URL: http://docmost:3000
+      # Plain http is acceptable here only because the sidecar reaches Docmost
+      # over the internal Docker network "proxy"; the traffic never leaves the
+      # host. Public traffic to Docmost is https through Caddy.
+      DOCMOST_ALLOW_INSECURE_HTTP: "true"
+      DATABASE_URL: postgresql://docmost_mcp:${MCP_DB_PASSWORD:?set MCP_DB_PASSWORD}@postgres:5432/docmost_mcp
+      SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY (openssl rand -hex 32); keep a copy in the password manager}
+      SECRET_KEY_PREVIOUS: ${SECRET_KEY_PREVIOUS:-}
+      ALLOWED_EMAILS: ${ALLOWED_EMAILS:-}
+      ALLOWED_SPACES: ${ALLOWED_SPACES:-}
+      RELOGIN_MODE: ${RELOGIN_MODE:-ask}
+      # Patched fork only (security review P-2): restrict OAuth redirect URIs.
+      OAUTH_REDIRECT_ALLOWLIST: ${OAUTH_REDIRECT_ALLOWLIST:-https://claude.ai/api/mcp/auth_callback,https://claude.com/api/mcp/auth_callback}
+      TOOL_CALLS_PER_MINUTE: ${TOOL_CALLS_PER_MINUTE:-60}
+      MAX_PAGE_CHARS: ${MAX_PAGE_CHARS:-60000}
+      SNAPSHOT_RETENTION_DAYS: ${SNAPSHOT_RETENTION_DAYS:-30}
+      AUDIT_RETENTION_DAYS: ${AUDIT_RETENTION_DAYS:-90}
+      UPLOAD_RETENTION_MINUTES: ${UPLOAD_RETENTION_MINUTES:-60}
+      # Keep in step with request_body max_size in the Caddyfile.
+      UPLOAD_MAX_MB: "50"
+      # Only Caddy talks to the sidecar, from the fixed "proxy" subnet below.
+      # Never "*": a client could then choose its own address for rate limits.
+      FORWARDED_ALLOW_IPS: 172.28.10.0/24
+      LOG_LEVEL: ${MCP_LOG_LEVEL:-info}
+    networks:
+      - proxy
+      - backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+      docmost:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=4)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 192m
+    logging: *default-logging
+
+  postgres:
+    image: postgres:${POSTGRES_TAG:-18}
+    restart: unless-stopped
+    # Small-host tuning. Postgres serves two databases (docmost, docmost_mcp).
+    command:
+      - postgres
+      - -c
+      - shared_buffers=64MB
+      - -c
+      - max_connections=40
+      - -c
+      - effective_cache_size=256MB
+      - -c
+      - work_mem=4MB
+      - -c
+      - maintenance_work_mem=32MB
+      - -c
+      - wal_buffers=2MB
+      - -c
+      - min_wal_size=80MB
+      - -c
+      - max_wal_size=512MB
+      - -c
+      - checkpoint_completion_target=0.9
+      - -c
+      - random_page_cost=1.1
+      - -c
+      - jit=off
+      - -c
+      - huge_pages=off
+      - -c
+      - max_worker_processes=4
+      - -c
+      - max_parallel_workers=2
+      - -c
+      - max_parallel_workers_per_gather=1
+      - -c
+      - max_parallel_maintenance_workers=1
+    environment:
+      POSTGRES_DB: docmost
+      POSTGRES_USER: docmost
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      # Read by postgres-init/10-mcp.sh on first initialisation only.
+      MCP_DB_PASSWORD: ${MCP_DB_PASSWORD:?set MCP_DB_PASSWORD}
+    volumes:
+      # Postgres 18 images keep PGDATA under /var/lib/postgresql/18/docker.
+      - postgres_data:/var/lib/postgresql
+      - ./postgres-init:/docker-entrypoint-initdb.d:ro
+    networks:
+      - backend
+    healthcheck:
+      # -h forces TCP: during first-boot init the entrypoint runs a temporary
+      # server on the Unix socket only, which must not count as ready.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U docmost -d docmost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    mem_limit: 192m
+    shm_size: 64m
+    logging: *default-logging
+
+  redis:
+    image: redis:${REDIS_TAG:-8}
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    volumes:
+      - redis_data:/data
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    mem_limit: 96m
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
+
+networks:
+  edge: {}
+  proxy:
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.28.10.0/24
+  backend:
+    internal: true
+
+volumes:
+  caddy_data:
+  caddy_config:
+  caddy_logs:
+  docmost_storage:
+  postgres_data:
+  redis_data:
