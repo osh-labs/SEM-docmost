@@ -336,9 +336,45 @@ Nightly cron (root, because the backup directory and Docker need it):
 15 3 * * * /opt/sem-docmost/deploy/scripts/backup.sh >>/var/log/sem-docmost-backup.log 2>&1
 ```
 
-Set an S3 lifecycle rule on the bucket for retention (for example 30 daily,
-12 monthly). The IAM user needs only `s3:PutObject` and `s3:GetObject` on the
-bucket.
+Use `/etc/cron.d` (as installed on 2026-11-10):
+
+```sh
+echo '15 3 * * * root /opt/sem-docmost/deploy/scripts/backup.sh >>/var/log/sem-docmost-backup.log 2>&1' \
+  | sudo tee /etc/cron.d/sem-docmost-backup && sudo chmod 644 /etc/cron.d/sem-docmost-backup
+```
+
+S3 bucket settings (as set up for `sem-docmost-backups-01`, `us-east-1`):
+Block all public access on, Versioning on, SSE-S3, and a lifecycle rule
+that expires current versions after 90 days and deletes noncurrent versions
+30 days after they become noncurrent. Versioning protects against a
+compromised host overwriting the backups, because the host's key cannot
+delete versions.
+
+IAM user `sem-docmost-backup`, no console access, one inline policy:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "BackupObjectsOnly",
+      "Effect": "Allow",
+      "Action": ["s3:PutObject", "s3:GetObject"],
+      "Resource": [
+        "arn:aws:s3:::<bucket>/sem-docmost/*",
+        "arn:aws:s3:::<bucket>/sem-docmost-env/*"
+      ]
+    }
+  ]
+}
+```
+
+Its access key goes into `.env` (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`).
+
+The `.env` copy is encrypted with `age`. Generate the key pair once with
+`age-keygen` (it prints the keys and writes nothing), keep the whole output
+in the password manager, and put only the public `age1...` key in
+`BACKUP_AGE_RECIPIENT`. The private key never stays on the production host.
 
 The database dump contains the sidecar's encrypted Docmost sessions and page
 snapshots. They are only readable with `SECRET_KEY`, which is why `.env` is
@@ -366,6 +402,35 @@ then run `restore.sh` (it starts Postgres and Redis itself). Afterwards run
 `scripts/smoke.sh`, open a few pages and attachments, and check that a
 member's existing MCP grant still works (build plan 6.3). Record the restore
 time in `docs/mcp/TEST_REPORT.md`.
+
+### Restore test on a temporary instance
+
+Done once on 2026-11-10; repeat after major upgrades. It works from a
+Windows PC (no `age` needed locally), because the `.env` copy is decrypted on
+the temporary host:
+
+1. Create a $7 Lightsail instance with the same launch script plus
+   `hostnamectl set-hostname sem-docs-restore`. Firewall: SSH from your IP
+   only; no static IP; no DNS changes.
+2. Sparse-clone `deploy/` as in "First boot".
+3. Download `env.age` from `sem-docmost-env/...` in the S3 console and copy
+   it to `/opt/sem-docmost/deploy/` (`scp -i <key.pem> env.age
+   ubuntu@<ip>:/opt/sem-docmost/deploy/` in PowerShell).
+4. `sudo apt-get install -y age`, paste the private key into
+   `/tmp/age-key.txt`, then
+   `age -d -i /tmp/age-key.txt -o .env env.age && chmod 600 .env && shred -u /tmp/age-key.txt`.
+5. Set `DOCS_HOST=docs.localhost` and `MCP_HOST=docs-mcp.localhost` in that
+   `.env`, so the copy uses Caddy's internal CA and leaves the real host
+   names alone.
+6. Check `hostname` prints `sem-docs-restore`, then run
+   `sudo scripts/restore.sh s3://<bucket>/sem-docmost/YYYY/MM/DD/<ts>`.
+7. Verify: `docker compose ps` all healthy;
+   `docker compose exec docmost-mcp docmost-mcp-remote admin members` lists
+   the members and their grants (proves `SECRET_KEY` matches); through
+   `ssh -L 443:127.0.0.1:443 ubuntu@<ip>`, sign in at https://docs.localhost
+   and check spaces, pages and comments.
+8. Delete the instance: its `.env` holds the production secrets and the S3
+   key.
 
 ## SECRET_KEY
 

@@ -35,7 +35,18 @@ Results marked "reported" were run by Chris on the live host and relayed in the 
 
 Assessment: all containers are within their limits. The swap in use is mostly pages pushed out during image pulls and migrations. The 1 GB versus 2 GB decision rests on the swap-in rate under load (T-10), not on idle use.
 
-## 4. Functional tests
+## 4. Backup and restore (Phase 6, 2026-11-10)
+
+| Check | Result | Note |
+|---|---|---|
+| First `backup.sh` run | Failed, then passed (reported) | First run: `AccessDenied` on `PutObject`, because the IAM inline policy was not in effect. Passed after the policy was saved for bucket `sem-docmost-backups-01` |
+| Objects in S3 | Pass (reported) | `postgres.sql.gz`, `storage.tar.gz`, `SHA256SUMS` under `sem-docmost/2026/11/10/<ts>/`; `env.age` under `sem-docmost-env/` |
+| Nightly cron | Installed (reported) | `/etc/cron.d/sem-docmost-backup`, 03:15 UTC |
+| `env.age` decrypts with the private key from the password manager | Pass (reported) | Decrypted on the temporary restore host |
+| Restore onto a clean temporary instance (6.3) | Pass (reported) | `restore.sh` from S3; all containers healthy; the sidecar lists members and grants (restored `SECRET_KEY` matches); spaces, pages and comments present in the restored wiki. Instance deleted afterwards |
+| Restore duration | Not recorded | |
+
+## 5. Functional tests
 
 | Test | Result | Note |
 |---|---|---|
