@@ -1,6 +1,6 @@
 # Docmost Community + Remote MCP: Build Plan
 
-Prepared 2026-11-09 for Chris Lee. Follows the handoff notes of the same date. Audience: the coding agent and the reviewer working in `osh-labs/SEM-docmost`.
+Prepared 2026-11-09 for the project owner. Follows the handoff notes of the same date. Audience: the coding agent and the reviewer working in `osh-labs/SEM-docmost`.
 
 Status of this document: planning only. Nothing below has been deployed or executed against a running Docmost. Statements marked "verified in source" were checked in this repository at `863352b` (Docmost 0.97.0). Statements attributed to third-party repositories are what those repositories document, not our own test results.
 
@@ -225,9 +225,9 @@ docs/mcp/
 
 ## 6. Phased build plan
 
-Each phase ends in a pull request to `claude/vigilant-einstein-4cbnn3`, or to a branch Chris names, with its exit criteria met. Do not start a phase until the previous one is merged.
+Each phase ends in a pull request to `claude/vigilant-einstein-4cbnn3`, or to a branch the owner names, with its exit criteria met. Do not start a phase until the previous one is merged.
 
-### Phase 0: Decisions and accounts (Chris, about 1 hour)
+### Phase 0: Decisions and accounts (owner, about 1 hour)
 
 | ID | Task | Output |
 |---|---|---|
@@ -251,7 +251,7 @@ Goal: decide between B and C based on evidence. Review a pinned commit (current 
 | 1.6 | Authorization: confirm every Docmost call uses the calling member's token, and that `ALLOWED_SPACES` and scopes are enforced server-side before the call | No shared or admin token path |
 | 1.7 | Upload and download links: TTL, entropy, scope | Matches the security model doc |
 | 1.8 | Run their unit and integration test suites (CI uses real Docmost) | Green |
-| 1.9 | Write `docs/mcp/SECURITY_REVIEW.md` with findings and a go/no-go | Chris signs off |
+| 1.9 | Write `docs/mcp/SECURITY_REVIEW.md` with findings and a go/no-go | Owner signs off |
 
 Exit: go means proceed with B. No-go for an unfixable reason means Track C (section 7). Fixable findings become patches on the fork, offered upstream as pull requests.
 
@@ -287,7 +287,7 @@ Run with Claude Code and the static bearer first (cheapest loop), then OAuth. Re
 | T-11 Output caps | `get_page` on a page larger than 60000 characters; search with a 500-character query | Truncated with a notice; query rejected or capped |
 | T-12 Audit | `admin audit` after the tests | Entries have user, tool and page id, and no content |
 
-Exit: T-01 to T-08 and T-11 to T-12 pass. T-09 and T-10 results are recorded and accepted by Chris.
+Exit: T-01 to T-08 and T-11 to T-12 pass. T-09 and T-10 results are recorded and accepted by the owner.
 
 ### Phase 4: Lightsail deployment (0.5 day)
 
@@ -385,14 +385,14 @@ Open item (from handoff section 4): an MCP sidecar is a separate program that ca
 
 ---
 
-## 11. Decisions (answered by Chris, 2026-11-09)
+## 11. Decisions (answered by the owner, 2026-11-09)
 
 | ID | Decision | Answer |
 |---|---|---|
 | D-1 | Track B (fork bbik52) or Track C (build in TypeScript) | B: fork and adopt, gated by the Phase 1 review |
 | D-2 | Sidecar source location | Separate repo `osh-labs/docmost-mcp-remote`; image referenced by digest; this repo holds `deploy/` |
 | D-3 | Host names | Wiki `docs.southeastexpeditionmed.com`; MCP `docs-mcp.southeastexpeditionmed.com`; DNS in Cloudflare (see 11.1) |
-| D-4 | Default scopes | `read` + `write`; `delete` and `admin` for Chris only |
+| D-4 | Default scopes | `read` + `write`; `delete` and `admin` for the owner only |
 | D-5 | `RELOGIN_MODE` | `ask` (members sign in again every 90 days) |
 | D-6 | Budget | $12 bundle (2 GB) acceptable if T-10 fails on 1 GB |
 | D-7 | Agent-written @-mentions | Allowed (comments and page edits). Members are told that mentions send Docmost notifications |
