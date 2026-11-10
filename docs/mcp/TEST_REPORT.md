@@ -1,6 +1,6 @@
 # Test Report: Docmost + MCP Sidecar (Phase 3)
 
-Environment: Lightsail 1 GB (Ubuntu 24.04, 2 GB swap), `us-east` region. Docmost `0.97.0`. Sidecar `ghcr.io/osh-labs/docmost-mcp-remote@sha256:e8313e822529a0f9144003aee2d635487563e959919cfd76788ff6874b636225` (fork commit `8804fe4`). Postgres 18, Redis 8, Caddy 2.11.
+Environment: Lightsail 1 GB (Ubuntu 24.04, 2 GB swap), `us-east-2` region. Docmost `0.97.0`. Sidecar `ghcr.io/osh-labs/docmost-mcp-remote@sha256:e8313e822529a0f9144003aee2d635487563e959919cfd76788ff6874b636225` (fork commit `8804fe4`). Postgres 18, Redis 8, Caddy 2.11.
 
 Results marked "reported" were run by the owner on the live host and relayed in the build session. The CI results come from the fork's GitHub Actions.
 
